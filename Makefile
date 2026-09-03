@@ -1,17 +1,18 @@
-# pjsua2.net — build pjsua2 and the SWIG C# bindings, then pack a NuGet package.
+# pjsua2.net — build pjsua2 and the SWIG C# bindings for multiple runtimes,
+# then pack a NuGet package.
 #
-# This Makefile drives the full pipeline:
-#   1. configure + build the pjproject submodule (with -fPIC so we can link a .so)
-#   2. run SWIG to generate the C# bindings + native wrapper (pjsua2_wrap.cpp)
-#   3. compile the wrapper and link libpjsua2.so (linux-x64)
-#   4. dotnet build / pack the pjsua2.net project into a NuGet package
+# Pipeline:
+#   1. run SWIG once to generate the C# bindings + native wrapper (pjsua2_wrap.cpp)
+#   2. for each RID: configure + build the pjproject submodule (with -fPIC),
+#      compile the wrapper and link the native library into runtimes/<rid>/native/
+#   3. dotnet build / pack the pjsua2.net project into a NuGet package
 #
 # Targets:
-#   all            build native library + managed assembly (default)
+#   all            build native libraries + managed assembly (default)
 #   pack           build everything and produce the .nupkg in $(OUT_DIR)
-#   configure      run pjproject's ./configure (idempotent)
-#   pjproject      build the pjproject static libraries
-#   native         generate bindings + libpjsua2.so
+#   native         generate bindings + native libraries for every RID
+#   configure      run pjproject's ./configure for the host target
+#   pjproject      build the pjproject static libraries for the host target
 #   dotnet-build   dotnet build the managed project
 #   clean          remove generated bindings/native/nuget artifacts
 #   distclean      clean + fully clean the pjproject tree
@@ -20,12 +21,39 @@
 #   CONFIGURATION  dotnet build configuration (default: Release)
 #   JOBS           number of parallel pjproject build jobs (default: nproc)
 #   NAMESPACE      C# namespace for the bindings (default: pjsua2)
+#   RIDS           space-separated list of runtimes to build
+#                  (default: linux-x64 linux-arm64 win-x64 win-x86)
 
 PJDIR        := pjproject
 MAKE         ?= make
 JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 CONFIGURATION ?= Release
 NAMESPACE    ?= pjsua2
+
+# ---------------------------------------------------------------------------
+# Target runtimes. For each RID we define:
+#   <RID>_CONFIGURE_ARGS  pjproject ./configure arguments (--host=... when
+#                         cross-compiling; empty = native host build)
+#   <RID>_LIB             native library file name (libpjsua2.so / pjsua2.dll)
+#   <RID>_LDFLAGS         extra link flags (optional)
+# ---------------------------------------------------------------------------
+RIDS ?= linux-x64 linux-arm64 win-x64 win-x86
+
+linux-x64_CONFIGURE_ARGS   :=
+linux-x64_LIB              := libpjsua2.so
+linux-x64_LDFLAGS          :=
+
+linux-arm64_CONFIGURE_ARGS := --host=aarch64-linux-gnu
+linux-arm64_LIB            := libpjsua2.so
+linux-arm64_LDFLAGS        :=
+
+win-x64_CONFIGURE_ARGS     := --host=x86_64-w64-mingw32
+win-x64_LIB                := pjsua2.dll
+win-x64_LDFLAGS            := -static-libgcc -static-libstdc++
+
+win-x86_CONFIGURE_ARGS     := --host=i686-w64-mingw32
+win-x86_LIB                := pjsua2.dll
+win-x86_LDFLAGS            := -static-libgcc -static-libstdc++
 
 # pjproject source layout
 SWIG_DIR     := $(PJDIR)/pjsip-apps/src/swig
@@ -35,60 +63,77 @@ SWIG_INC     := -I$(PJDIR)/pjlib/include \
                 -I$(PJDIR)/pjmedia/include \
                 -I$(PJDIR)/pjsip/include \
                 -I$(PJDIR)/pjnath/include -c++
+CONFIG_SITE  := $(PJDIR)/pjlib/include/pj/config_site.h
 
 # .NET project layout
 DOTNET_PROJ  := pjsua2.net/pjsua2.net.csproj
 BINDINGS_DIR := pjsua2.net/bindings
 NATIVE_DIR   := pjsua2.net/native
-RUNTIME_DIR  := pjsua2.net/runtimes/linux-x64/native
-NATIVE_LIB   := $(RUNTIME_DIR)/libpjsua2.so
+RUNTIME_BASE := pjsua2.net/runtimes
 OUT_DIR      := artifacts
 
 WRAP_CPP     := $(NATIVE_DIR)/pjsua2_wrap.cpp
-WRAP_OBJ     := $(NATIVE_DIR)/pjsua2_wrap.o
 
 # ---------------------------------------------------------------------------
-# PJ_* variables (PJ_CXX, PJ_CXXFLAGS, PJ_LDXXFLAGS, PJ_LDXXLIBS) are defined
-# by the generated build.mak. It does not exist until `make configure` has run,
-# so the native recipes are reached through a re-entrant make (see `native`).
+# PJ_* variables (PJ_CXX, PJ_CXXFLAGS, PJ_LDXXFLAGS, PJ_LDXXLIBS) come from
+# the generated build.mak, which only exists after ./configure has run for a
+# given target. The per-RID recipes therefore re-enter make (see native-one /
+# native-compile) so build.mak is current for the RID being built.
 # ---------------------------------------------------------------------------
 -include $(PJDIR)/build.mak
 
-.PHONY: all configure pjproject native native-only dotnet-build pack clean distclean
+.PHONY: all configure pjproject native native-one native-compile dotnet-build pack clean distclean
 
 all: native dotnet-build
 
-# --- Phase 1: pjproject ----------------------------------------------------
+# --- SWIG bindings (generated once; identical for every RID) ---------------
 
-# (Re)generate pjproject/build.mak. -fPIC is required to link libpjsua2.so.
-$(PJDIR)/build.mak: $(PJDIR)/aconfigure
-	cd $(PJDIR) && CFLAGS="-O2 -fPIC" CXXFLAGS="-g -O2 -fPIC" ./configure
+$(CONFIG_SITE):
+	@touch $@
 
-configure: $(PJDIR)/build.mak
-
-pjproject: configure
-	$(MAKE) -C $(PJDIR) -j$(JOBS)
-
-# --- Phase 2: SWIG bindings + native library ------------------------------
-# Re-invoke make now that pjproject/build.mak exists, so the PJ_* variables
-# are defined for the native recipes below.
-
-native: pjproject
-	$(MAKE) --no-print-directory native-only
-
-native-only: $(NATIVE_LIB)
-
-$(WRAP_CPP): $(SWIG_IFACE) $(PJDIR)/build.mak
+$(WRAP_CPP): $(SWIG_IFACE) $(CONFIG_SITE)
 	@mkdir -p $(NATIVE_DIR) $(BINDINGS_DIR)
 	swig $(SWIG_INC) -w312 -namespace $(NAMESPACE) -csharp \
 	    -outdir $(BINDINGS_DIR) -o $@ $(SWIG_IFACE)
 
-$(WRAP_OBJ): $(WRAP_CPP)
-	$(PJ_CXX) -fPIC -c $< -o $@ $(PJ_CXXFLAGS)
+# --- Native libraries for every RID ----------------------------------------
 
-$(NATIVE_LIB): $(WRAP_OBJ)
-	@mkdir -p $(RUNTIME_DIR)
-	$(PJ_CXX) -shared -o $@ $< $(PJ_LDXXFLAGS) $(PJ_LDXXLIBS)
+native: $(WRAP_CPP)
+	@for rid in $(RIDS); do \
+		$(MAKE) --no-print-directory native-one RID=$$rid || exit 1; \
+	done
+
+# Configure + build pjproject for one RID, then compile/link the wrapper.
+native-one:
+	@if [ -n "$($(RID)_CONFIGURE_ARGS)" ]; then \
+		cross=$$(printf '%s' "$($(RID)_CONFIGURE_ARGS)" | sed -n 's/.*--host=\([^ ]*\).*/\1/p'); \
+		if [ -z "$$cross" ] || ! command -v "$$cross-g++" >/dev/null 2>&1; then \
+			echo "Error: cross compiler '$$cross-g++' not found (needed for $(RID))."; \
+			exit 1; \
+		fi; \
+	fi
+	@echo "==> Configuring pjproject for $(RID) ($($(RID)_CONFIGURE_ARGS))"
+	cd $(PJDIR) && CFLAGS="-O2 -fPIC" CXXFLAGS="-g -O2 -fPIC" ./configure $($(RID)_CONFIGURE_ARGS)
+	@echo "==> Building pjproject for $(RID)"
+	$(MAKE) -C $(PJDIR) -j$(JOBS) lib
+	@$(MAKE) --no-print-directory native-compile RID=$(RID)
+
+# Re-entrant: build.mak is now current for this RID.
+native-compile: $(RUNTIME_BASE)/$(RID)/native/$($(RID)_LIB)
+
+$(RUNTIME_BASE)/$(RID)/native/$($(RID)_LIB): $(WRAP_CPP)
+	@mkdir -p $(NATIVE_DIR)/$(RID) $(RUNTIME_BASE)/$(RID)/native
+	$(PJ_CXX) -fPIC -c $(WRAP_CPP) -o $(NATIVE_DIR)/$(RID)/pjsua2_wrap.o $(PJ_CXXFLAGS)
+	$(PJ_CXX) -shared -o $@ $(NATIVE_DIR)/$(RID)/pjsua2_wrap.o \
+	    $(PJ_LDXXFLAGS) $(PJ_LDXXLIBS) $($(RID)_LDFLAGS)
+
+# --- Host-only convenience targets (for local development) ------------------
+
+configure:
+	cd $(PJDIR) && CFLAGS="-O2 -fPIC" CXXFLAGS="-g -O2 -fPIC" ./configure
+
+pjproject: configure
+	$(MAKE) -C $(PJDIR) -j$(JOBS) lib
 
 # --- Managed build + NuGet package -----------------------------------------
 
@@ -101,7 +146,7 @@ pack: dotnet-build
 # --- Cleanup ---------------------------------------------------------------
 
 clean:
-	rm -rf $(BINDINGS_DIR) $(NATIVE_DIR) $(RUNTIME_DIR) $(OUT_DIR)
+	rm -rf $(BINDINGS_DIR) $(NATIVE_DIR) $(RUNTIME_BASE) $(OUT_DIR)
 	rm -rf pjsua2.net/bin pjsua2.net/obj
 
 distclean: clean
