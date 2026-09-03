@@ -1,0 +1,14 @@
+# Build artifacts
+pjsua2.net/bin/
+pjsua2.net/obj/
+
+# Generated SWIG bindings + native library
+pjsua2.net/bindings/
+pjsua2.net/native/
+pjsua2.net/runtimes/
+
+# NuGet packages
+artifacts/
+
+# IDE
+.idea/
