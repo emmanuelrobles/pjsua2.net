@@ -1,0 +1,152 @@
+name: Build and Publish NuGet
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - "main"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-pack-publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: docker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Fetch tags
+        run: git fetch --tags
+
+      - name: Install native build dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential pkg-config swig libssl-dev
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build native library and bindings
+        run: make native
+
+      - name: Restore
+        run: dotnet restore pjsua2.net/pjsua2.net.csproj
+
+      - name: Build
+        run: dotnet build pjsua2.net/pjsua2.net.csproj -c Release --no-restore
+
+      - name: Resolve semantic version from branch
+        shell: bash
+        run: |
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            BRANCH_NAME="${{ github.event.pull_request.head.ref }}"
+          else
+            BRANCH_NAME="${GITHUB_REF_NAME}"
+          fi
+
+          case "${BRANCH_NAME}" in
+            feature|feature/*|feature-*)
+              BUMP_KIND="minor"
+              ;;
+            fix|fix/*|fix-*)
+              BUMP_KIND="patch"
+              ;;
+            major|major/*|major-*)
+              BUMP_KIND="major"
+              ;;
+            *)
+              echo "Unsupported branch name '${BRANCH_NAME}'."
+              echo "Use branches starting with 'feature', 'fix', or 'major'."
+              exit 1
+              ;;
+          esac
+
+          LATEST_TAG="$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1)"
+          if [ -z "${LATEST_TAG}" ]; then
+            BASE_VERSION="0.0.0"
+          else
+            BASE_VERSION="${LATEST_TAG#v}"
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE_VERSION}"
+
+          case "${BUMP_KIND}" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          PACKAGE_VERSION="${MAJOR}.${MINOR}.${PATCH}"
+
+          echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> "${GITHUB_ENV}"
+          echo "Resolved version from branch '${BRANCH_NAME}' (${BUMP_KIND} bump): ${PACKAGE_VERSION}"
+
+      - name: Pack
+        run: dotnet pack pjsua2.net/pjsua2.net.csproj -c Release --no-build -p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Publish NuGet
+        env:
+          FORGEJO_NUGET_USERNAME: ${{ secrets.FORGEJO_NUGET_USERNAME }}
+          FORGEJO_NUGET_PASSWORD: ${{ secrets.FORGEJO_NUGET_PASSWORD }}
+          NUGET_SOURCE: ${{ vars.NUGET_SOURCE }}
+        run: |
+          if [ -z "${FORGEJO_NUGET_USERNAME}" ]; then
+            echo "FORGEJO_NUGET_USERNAME secret is not set."
+            exit 1
+          fi
+
+          if [ -z "${FORGEJO_NUGET_PASSWORD}" ]; then
+            echo "FORGEJO_NUGET_PASSWORD secret is not set."
+            exit 1
+          fi
+
+          dotnet nuget add source "${NUGET_SOURCE}" \
+            --name forgejo \
+            --username "${FORGEJO_NUGET_USERNAME}" \
+            --password "${FORGEJO_NUGET_PASSWORD}" \
+            --store-password-in-clear-text
+
+          dotnet nuget push "pjsua2.net/bin/Release/*.nupkg" \
+            --source forgejo \
+            --skip-duplicate
+
+      - name: Tag merged commit
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          TAG_NAME="v${PACKAGE_VERSION}"
+
+          if git rev-parse "${TAG_NAME}" >/dev/null 2>&1; then
+            echo "Tag ${TAG_NAME} already exists. Skipping."
+            exit 0
+          fi
+
+          TARGET_SHA="${{ github.event.pull_request.merge_commit_sha }}"
+          if [ -z "${TARGET_SHA}" ]; then
+            echo "No merge commit SHA found for this PR event."
+            exit 1
+          fi
+
+          git config user.name "forgejo-actions[bot]"
+          git config user.email "forgejo-actions[bot]@users.noreply.local"
+
+          git tag -a "${TAG_NAME}" "${TARGET_SHA}" -m "Release ${TAG_NAME}"
+          git push origin "${TAG_NAME}"
