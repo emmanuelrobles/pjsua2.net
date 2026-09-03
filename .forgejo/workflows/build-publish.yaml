@@ -107,8 +107,8 @@ jobs:
 
       - name: Publish NuGet
         env:
-          FORGEJO_NUGET_USERNAME: ${{ secrets.NUGET_USERNAME }}
-          FORGEJO_NUGET_PASSWORD: ${{ secrets.NUGET_PASSWORD }}
+          NUGET_USERNAME: ${{ secrets.NUGET_USERNAME }}
+          NUGET_PASSWORD: ${{ secrets.NUGET_PASSWORD }}
           NUGET_SOURCE: ${{ vars.NUGET_SOURCE }}
         run: |
           if [ -z "${NUGET_USERNAME}" ]; then
