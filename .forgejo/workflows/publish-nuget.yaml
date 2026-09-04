@@ -1,0 +1,87 @@
+name: Publish NuGet to nuget.org
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (for manual runs)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish-nuget-org:
+    runs-on: docker
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          submodules: recursive
+
+      - name: Install native build dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential pkg-config swig libssl-dev \
+            g++-aarch64-linux-gnu \
+            g++-mingw-w64-x86-64 \
+            g++-mingw-w64-i686
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Build native library and bindings
+        run: make native
+
+      - name: Resolve package version from tag
+        shell: bash
+        run: |
+          TAG_NAME="${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}"
+
+          if [ -z "${TAG_NAME}" ]; then
+            echo "No tag provided."
+            exit 1
+          fi
+
+          PACKAGE_VERSION="${TAG_NAME#v}"
+
+          if ! [[ "${PACKAGE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag '${TAG_NAME}' does not map to a valid SemVer package version."
+            exit 1
+          fi
+
+          echo "TAG_NAME=${TAG_NAME}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> "${GITHUB_ENV}"
+          echo "Publishing package version ${PACKAGE_VERSION} from tag ${TAG_NAME}."
+
+      - name: Restore
+        run: dotnet restore pjsua2.net/pjsua2.net.csproj
+
+      - name: Build
+        run: dotnet build pjsua2.net/pjsua2.net.csproj -c Release --no-restore
+
+      - name: Pack
+        run: dotnet pack pjsua2.net/pjsua2.net.csproj -c Release --no-build -p:Version=${{ env.PACKAGE_VERSION }}
+
+      - name: Push package to NuGet.org
+        env:
+          PUBLIC_NUGET_API_KEY: ${{ secrets.PUBLIC_NUGET_API_KEY }}
+        shell: bash
+        run: |
+          if [ -z "${PUBLIC_NUGET_API_KEY}" ]; then
+            echo "PUBLIC_NUGET_API_KEY secret is not set."
+            exit 1
+          fi
+
+          dotnet nuget push "pjsua2.net/bin/Release/*.nupkg" \
+            --source "https://api.nuget.org/v3/index.json" \
+            --api-key "${PUBLIC_NUGET_API_KEY}" \
+            --skip-duplicate
