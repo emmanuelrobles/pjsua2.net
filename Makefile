@@ -121,7 +121,7 @@ $(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 	cd $(OPENSSL_DIR)/src-linux-arm64/openssl-$(OPENSSL_VERSION) && \
 	    ./Configure linux-aarch64 shared no-tests \
 	        --prefix=$(linux-arm64_SSL_PFX) --cross-compile-prefix=aarch64-linux-gnu- && \
-	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
+	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
 # Drop the "-x64" suffix that mingw.pm appends for the mingw64 target, so the
 # 64-bit DLLs are named libssl-3.dll / libcrypto-3.dll (matching the in-house
@@ -132,7 +132,7 @@ $(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	sed -i 's/"-x64"/""/' $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION)/Configurations/platform/mingw.pm
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
 	    ./Configure mingw64 shared no-tests --prefix=$(win-x64_SSL_PFX) && \
-	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
+	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
 $(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x86
@@ -140,7 +140,7 @@ $(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	cd $(OPENSSL_DIR)/src-win-x86/openssl-$(OPENSSL_VERSION) && \
 	    ./Configure mingw shared no-tests \
 	        --prefix=$(win-x86_SSL_PFX) --cross-compile-prefix=i686-w64-mingw32- && \
-	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
+	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
 .PHONY: all configure pjproject native native-one native-compile dotnet-build pack clean distclean
 

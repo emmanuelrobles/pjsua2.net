@@ -29,6 +29,16 @@ jobs:
             g++-aarch64-linux-gnu \
             perl curl ca-certificates
 
+      - name: Cache OpenSSL build
+        uses: actions/cache@v6
+        with:
+          path: |
+            build/openssl/prefix
+            build/openssl/openssl-*.tar.gz
+          key: openssl-linux-arm64-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            openssl-linux-arm64-
+
       - name: Build Linux native libraries
         run: make native RIDS="linux-x64 linux-arm64"
 
@@ -75,6 +85,16 @@ jobs:
             perl
             curl
             tar
+
+      - name: Cache OpenSSL build
+        uses: actions/cache@v6
+        with:
+          path: |
+            build/openssl/prefix
+            build/openssl/openssl-*.tar.gz
+          key: openssl-win-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            openssl-win-
 
       - name: Build Windows native libraries
         shell: msys2 {0}
