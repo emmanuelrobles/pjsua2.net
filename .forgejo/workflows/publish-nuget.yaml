@@ -67,7 +67,7 @@ jobs:
           submodules: recursive
 
       - name: Setup MSYS2 (MinGW-w64)
-        uses: msys2/setup-msys2@v2
+        uses: https://github.com/msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           install: >-
