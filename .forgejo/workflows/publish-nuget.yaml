@@ -30,6 +30,7 @@ jobs:
           apt-get update
           apt-get install -y build-essential pkg-config swig libssl-dev \
             g++-aarch64-linux-gnu \
+            g++-mingw-w64-i686 \
             perl curl ca-certificates
 
       - name: Cache OpenSSL build
@@ -38,12 +39,12 @@ jobs:
           path: |
             build/openssl/prefix
             build/openssl/openssl-*.tar.gz
-          key: openssl-linux-arm64-${{ hashFiles('Makefile') }}
+          key: openssl-linux-${{ hashFiles('Makefile') }}
           restore-keys: |
-            openssl-linux-arm64-
+            openssl-linux-
 
-      - name: Build Linux native libraries
-        run: make native RIDS="linux-x64 linux-arm64"
+      - name: Build native libraries
+        run: make native RIDS="linux-x64 linux-arm64 win-x86"
 
       - name: Upload linux-x64 native lib
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4
@@ -57,6 +58,13 @@ jobs:
         with:
           name: native-linux-arm64
           path: pjsua2.net/runtimes/linux-arm64/native
+          if-no-files-found: error
+
+      - name: Upload win-x86 native lib
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: native-win-x86
+          path: pjsua2.net/runtimes/win-x86/native
           if-no-files-found: error
 
       - name: Upload C# bindings
@@ -82,7 +90,6 @@ jobs:
           msystem: MINGW64
           install: >-
             mingw-w64-x86_64-gcc
-            mingw-w64-i686-gcc
             make
             swig
             perl
@@ -101,22 +108,13 @@ jobs:
 
       - name: Build Windows native libraries
         shell: msys2 {0}
-        run: |
-          export PATH="$PATH:/mingw32/bin"
-          make native RIDS="win-x64 win-x86"
+        run: make native RIDS="win-x64"
 
       - name: Upload win-x64 native lib
         uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: native-win-x64
           path: pjsua2.net/runtimes/win-x64/native
-          if-no-files-found: error
-
-      - name: Upload win-x86 native lib
-        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
-        with:
-          name: native-win-x86
-          path: pjsua2.net/runtimes/win-x86/native
           if-no-files-found: error
 
   pack-publish:

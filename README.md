@@ -19,10 +19,10 @@ consumers only need to reference the NuGet package.
 
 The build is split across two hosts:
 
-- **Linux RIDs** (`linux-x64`, `linux-arm64`) build on Linux. `linux-arm64` is
-  cross-compiled with `g++-aarch64-linux-gnu`.
-- **Windows RIDs** (`win-x64`, `win-x86`) build on Windows with MinGW-w64
-  (via MSYS2).
+- **Linux RIDs** (`linux-x64`, `linux-arm64`, `win-x86`) build on Linux.
+  `linux-arm64` is cross-compiled with `g++-aarch64-linux-gnu`; `win-x86` is
+  cross-compiled with `g++-mingw-w64-i686`.
+- **Windows RIDs** (`win-x64`) build on Windows with MinGW-w64 (via MSYS2).
 
 Common prerequisites:
 
@@ -36,14 +36,13 @@ On Debian/Ubuntu (Linux host):
 
 ```sh
 sudo apt-get install -y build-essential pkg-config swig libssl-dev \
-  g++-aarch64-linux-gnu perl curl
+  g++-aarch64-linux-gnu g++-mingw-w64-i686 perl curl
 ```
 
 On Windows (MSYS2, MINGW64 shell):
 
 ```sh
-pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-i686-gcc \
-  make swig perl curl tar
+pacman -S --noconfirm mingw-w64-x86_64-gcc make swig perl curl tar
 ```
 
 The `pjproject` submodule must be initialised:
@@ -61,8 +60,8 @@ built on Linux (arm64 cross-compiled); Windows RIDs are built on Windows via
 MSYS2/MinGW-w64.
 
 ```sh
-make native RIDS="linux-x64 linux-arm64"   # on Linux
-make native RIDS="win-x64 win-x86"         # on Windows (MSYS2)
+make native RIDS="linux-x64 linux-arm64 win-x86"   # on Linux
+make native RIDS="win-x64"                          # on Windows (MSYS2)
 ```
 
 The CI pipeline (`.forgejo/workflows/`) builds each group on its own runner and
@@ -95,14 +94,14 @@ packs the combined NuGet package into
 ### Building a specific RID
 
 ```sh
-make native RIDS=linux-x64             # on Linux
-make native RIDS="linux-x64 linux-arm64"
-make native RIDS="win-x64 win-x86"     # on Windows (MSYS2)
+make native RIDS=linux-x64                       # on Linux
+make native RIDS="linux-x64 linux-arm64 win-x86" # on Linux
+make native RIDS=win-x64                         # on Windows (MSYS2)
 ```
 
 Each RID reconfigures and rebuilds pjproject for its target, so single-RID
-builds are much faster than the full set. Windows RIDs must be built on a
-Windows host and Linux RIDs on a Linux host.
+builds are much faster than the full set. `win-x64` must be built on a Windows
+host; `linux-x64`, `linux-arm64` and `win-x86` build on a Linux host.
 
 ## Package contents
 
@@ -159,8 +158,8 @@ runner and the Windows RIDs on the `windows` runner, then packs the combined
 NuGet package and publishes it when a pull request is merged to `main` (or on
 manual dispatch).
 
-- `build-linux` (docker) builds `linux-x64` + `linux-arm64`; `build-windows`
-  (windows) builds `win-x64` + `win-x86` via MSYS2/MinGW-w64; `pack-publish`
+- `build-linux` (docker) builds `linux-x64` + `linux-arm64` + `win-x86`;
+  `build-windows` (windows) builds `win-x64` via MSYS2/MinGW-w64; `pack-publish`
   collects the native libraries and packs/publishes the package.
 - The OpenSSL source build under `build/openssl/` is cached between runs with
   `actions/cache`, keyed on the `Makefile` contents — so only the first build of
