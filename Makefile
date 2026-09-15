@@ -40,8 +40,8 @@ NAMESPACE    ?= pjsua2
 # — nothing is bundled.
 #
 #   linux-arm64  cross-built on the Linux (docker) runner
+#   win-x86      cross-built on the Linux runner (i686-w64-mingw32)
 #   win-x64      built natively on the Windows runner (MinGW x64 via MSYS2)
-#   win-x86      cross-built on the Windows runner (i686-w64-mingw32)
 # ---------------------------------------------------------------------------
 OPENSSL_VERSION ?= 3.6.4
 OPENSSL_DIR    := $(abspath build/openssl)
