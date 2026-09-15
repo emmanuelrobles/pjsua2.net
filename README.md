@@ -112,7 +112,7 @@ OpenSSL installed on the target system:
 | ---           | ---                                             | ---                         |
 | `linux-x64`   | host `libssl.so.3` (native)                     | system OpenSSL              |
 | `linux-arm64` | cross-built dev files (headers + symlink libs)  | system `libssl.so.3`        |
-| `win-x64`     | cross-built import lib `libssl.dll.a`           | system `libssl-3-x64.dll`   |
+| `win-x64`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
 | `win-x86`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
 
 The cross targets (`linux-arm64`, `win-x64`, `win-x86`) have no OpenSSL at build
@@ -121,13 +121,17 @@ time, so the Makefile cross-builds a pinned OpenSSL (`OPENSSL_VERSION`, default
 libraries, then points pjproject at it via `--with-ssl`. Only the dev files are
 used at link time — nothing is bundled into the package and no rpath is set, so
 the library resolves OpenSSL from the system at runtime (unqualified
-`libssl.so.3` / `libssl-3-x64.dll` dependencies).
+`libssl.so.3` / `libssl-3.dll` dependencies).
 
 - The dependency is on OpenSSL **3.x** specifically (`libssl.so.3` /
-  `libssl-3-x64.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
+  `libssl-3.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
 - **Windows does not ship OpenSSL.** An OpenSSL 3.x build
-  (`libssl-3-x64.dll` / `libcrypto-3-x64.dll`) must be reachable on the target
+  (`libssl-3.dll` / `libcrypto-3.dll`) must be reachable on the target
   machine via `PATH` or the application directory.
+- The 64-bit Windows DLL is deliberately named `libssl-3.dll` (no `-x64`
+  suffix). OpenSSL normally names the MinGW 64-bit build `libssl-3-x64.dll`;
+  the Makefile patches that suffix off so the dependency matches the existing
+  `!Shared\Setup\OpenSSL.wxi` deployment.
 - Because `linux-x64` links the system OpenSSL dynamically, host-level OpenSSL
   configuration (e.g. FIPS mode) applies there.
 
