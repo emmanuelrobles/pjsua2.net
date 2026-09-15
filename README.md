@@ -17,21 +17,33 @@ consumers only need to reference the NuGet package.
 
 ## Prerequisites
 
+The build is split across two hosts:
+
+- **Linux RIDs** (`linux-x64`, `linux-arm64`) build on Linux. `linux-arm64` is
+  cross-compiled with `g++-aarch64-linux-gnu`.
+- **Windows RIDs** (`win-x64`, `win-x86`) build on Windows with MinGW-w64
+  (via MSYS2).
+
+Common prerequisites:
+
 - [.NET SDK 10](https://dotnet.microsoft.com/) (see `global.json`)
 - SWIG 4.x (`swig`)
 - A C/C++ toolchain (`gcc`, `g++`, `make`)
 - `libssl-dev` (enables TLS / SIPS / DTLS-SRTP)
-- `perl` and `curl` (used to cross-build OpenSSL for the cross targets)
-- For `linux-arm64`: `g++-aarch64-linux-gnu`
-- For `win-x64`: `g++-mingw-w64-x86-64`
-- For `win-x86`: `g++-mingw-w64-i686`
+- `perl` and `curl` (used to build OpenSSL for the cross targets)
 
-On Debian/Ubuntu:
+On Debian/Ubuntu (Linux host):
 
 ```sh
 sudo apt-get install -y build-essential pkg-config swig libssl-dev \
-  g++-aarch64-linux-gnu g++-mingw-w64-x86-64 g++-mingw-w64-i686 \
-  perl curl
+  g++-aarch64-linux-gnu perl curl
+```
+
+On Windows (MSYS2, MINGW64 shell):
+
+```sh
+pacman -S --noconfirm mingw-w64-x86_64-gcc mingw-w64-i686-gcc \
+  make swig perl curl tar
 ```
 
 The `pjproject` submodule must be initialised:
@@ -42,17 +54,20 @@ git submodule update --init --recursive
 
 ## Build
 
-The top-level `Makefile` drives the full pipeline: it configures and builds the
+The top-level `Makefile` drives the pipeline: it configures and builds the
 `pjproject` submodule, runs SWIG to generate the C# bindings and native wrapper,
-compiles/links the native library for each runtime, and builds/packs the .NET
-project.
+and compiles/links the native library for each configured RID. Linux RIDs are
+built on Linux (arm64 cross-compiled); Windows RIDs are built on Windows via
+MSYS2/MinGW-w64.
 
 ```sh
-make            # build native libraries (all RIDs) + managed assembly
-make pack       # build everything and produce the .nupkg in artifacts/
+make native RIDS="linux-x64 linux-arm64"   # on Linux
+make native RIDS="win-x64 win-x86"         # on Windows (MSYS2)
 ```
 
-The NuGet package is written to `artifacts/CodeCrush.pjsua2.<version>.nupkg`.
+The CI pipeline (`.forgejo/workflows/`) builds each group on its own runner and
+packs the combined NuGet package into
+`artifacts/CodeCrush.pjsua2.<version>.nupkg`.
 
 ### Make targets
 
@@ -80,14 +95,14 @@ The NuGet package is written to `artifacts/CodeCrush.pjsua2.<version>.nupkg`.
 ### Building a specific RID
 
 ```sh
-make native RIDS=linux-x64
-make native RIDS=linux-arm64
+make native RIDS=linux-x64             # on Linux
 make native RIDS="linux-x64 linux-arm64"
-make pack   RIDS="linux-x64 win-x64"
+make native RIDS="win-x64 win-x86"     # on Windows (MSYS2)
 ```
 
 Each RID reconfigures and rebuilds pjproject for its target, so single-RID
-builds are much faster than the full set.
+builds are much faster than the full set. Windows RIDs must be built on a
+Windows host and Linux RIDs on a Linux host.
 
 ## Package contents
 
@@ -112,16 +127,16 @@ OpenSSL installed on the target system:
 | ---           | ---                                             | ---                         |
 | `linux-x64`   | host `libssl.so.3` (native)                     | system OpenSSL              |
 | `linux-arm64` | cross-built dev files (headers + symlink libs)  | system `libssl.so.3`        |
-| `win-x64`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
+| `win-x64`     | native import lib `libssl.dll.a` (MinGW)        | system `libssl-3.dll`       |
 | `win-x86`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
 
-The cross targets (`linux-arm64`, `win-x64`, `win-x86`) have no OpenSSL at build
-time, so the Makefile cross-builds a pinned OpenSSL (`OPENSSL_VERSION`, default
-`3.6.4`) under `build/openssl/` purely for its headers and import/symlink
-libraries, then points pjproject at it via `--with-ssl`. Only the dev files are
-used at link time — nothing is bundled into the package and no rpath is set, so
-the library resolves OpenSSL from the system at runtime (unqualified
-`libssl.so.3` / `libssl-3.dll` dependencies).
+Targets without OpenSSL on the build host (`linux-arm64`, `win-x64`, `win-x86`)
+get a pinned OpenSSL (`OPENSSL_VERSION`, default `3.6.4`) built under
+`build/openssl/` purely for its headers and import/symlink libraries, then
+point pjproject at it via `--with-ssl`. Only the dev files are used at link
+time — nothing is bundled into the package and no rpath is set, so the library
+resolves OpenSSL from the system at runtime (unqualified `libssl.so.3` /
+`libssl-3.dll` dependencies).
 
 - The dependency is on OpenSSL **3.x** specifically (`libssl.so.3` /
   `libssl-3.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
@@ -137,9 +152,14 @@ the library resolves OpenSSL from the system at runtime (unqualified
 
 ## CI/CD
 
-`.forgejo/workflows/build-publish.yaml` builds all runtimes and publishes the
-NuGet package when a pull request is merged to `main` (or on manual dispatch).
+`.forgejo/workflows/build-publish.yaml` builds the Linux RIDs on the `docker`
+runner and the Windows RIDs on the `windows` runner, then packs the combined
+NuGet package and publishes it when a pull request is merged to `main` (or on
+manual dispatch).
 
+- `build-linux` (docker) builds `linux-x64` + `linux-arm64`; `build-windows`
+  (windows) builds `win-x64` + `win-x86` via MSYS2/MinGW-w64; `pack-publish`
+  collects the native libraries and packs/publishes the package.
 - Versioning is derived from the source branch name and the latest `vX.Y.Z` tag:
   - `feature/*` bumps **minor**
   - `fix/*` bumps **patch**
@@ -165,7 +185,7 @@ NuGet package when a pull request is merged to `main` (or on manual dispatch).
 
 ## Notes and caveats
 
-- **Windows cross-compilation** — built with MinGW-w64 via
+- **Windows build** — built with MinGW-w64 (via MSYS2) and linked with
   `-static-libgcc -static-libstdc++` to avoid libgcc/libstdc++ runtime DLL
   dependencies. (OpenSSL itself is still linked dynamically — see
   [TLS / OpenSSL](#tls--openssl).)

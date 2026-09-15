@@ -32,12 +32,16 @@ CONFIGURATION ?= Release
 NAMESPACE    ?= pjsua2
 
 # ---------------------------------------------------------------------------
-# OpenSSL. linux-x64 links against the system OpenSSL directly. The cross
-# targets (linux-arm64, win-x64, win-x86) need matching OpenSSL dev files at
-# link time, so each cross-builds its own OpenSSL (shared) purely for its
-# headers + import/symlink libs and points pjproject at it via
-# --with-ssl=<prefix>. The native library is linked dynamically and resolves
-# libssl/libcrypto from the target system at runtime — nothing is bundled.
+# OpenSSL. linux-x64 links against the system OpenSSL directly. The other
+# targets need matching OpenSSL dev files at link time, so each builds its own
+# OpenSSL (shared) purely for its headers + import/symlink libs and points
+# pjproject at it via --with-ssl=<prefix>. The native library is linked
+# dynamically and resolves libssl/libcrypto from the target system at runtime
+# — nothing is bundled.
+#
+#   linux-arm64  cross-built on the Linux (docker) runner
+#   win-x64      built natively on the Windows runner (MinGW x64 via MSYS2)
+#   win-x86      cross-built on the Windows runner (i686-w64-mingw32)
 # ---------------------------------------------------------------------------
 OPENSSL_VERSION ?= 3.6.4
 OPENSSL_DIR    := $(abspath build/openssl)
@@ -54,7 +58,7 @@ win-x86_SSL_PFX     := $(OPENSSL_DIR)/prefix/win-x86
 #                         cross-compiling; empty = native host build)
 #   <RID>_LIB             native library file name (libpjsua2.so / pjsua2.dll)
 #   <RID>_LDFLAGS         extra link flags (optional)
-#   <RID>_SSL_DEP         OpenSSL shared lib prerequisite (cross targets only)
+#   <RID>_SSL_DEP         OpenSSL shared lib prerequisite (non-native targets)
 # ---------------------------------------------------------------------------
 RIDS ?= linux-x64 linux-arm64 win-x64 win-x86
 
@@ -68,7 +72,7 @@ linux-arm64_LIB            := libpjsua2.so
 linux-arm64_LDFLAGS        :=
 linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.so.3
 
-win-x64_CONFIGURE_ARGS     := --host=x86_64-w64-mingw32 --with-ssl=$(win-x64_SSL_PFX)
+win-x64_CONFIGURE_ARGS     := --with-ssl=$(win-x64_SSL_PFX)
 win-x64_LIB                := pjsua2.dll
 win-x64_LDFLAGS            := -static-libgcc -static-libstdc++
 win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.dll.a
@@ -127,8 +131,7 @@ $(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
 	sed -i 's/"-x64"/""/' $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION)/Configurations/platform/mingw.pm
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw64 shared no-tests \
-	        --prefix=$(win-x64_SSL_PFX) --cross-compile-prefix=x86_64-w64-mingw32- && \
+	    ./Configure mingw64 shared no-tests --prefix=$(win-x64_SSL_PFX) && \
 	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
 
 $(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
@@ -162,12 +165,10 @@ native: $(WRAP_CPP)
 
 # Configure + build pjproject for one RID, then compile/link the wrapper.
 native-one: $($(RID)_SSL_DEP)
-	@if [ -n "$($(RID)_CONFIGURE_ARGS)" ]; then \
-		cross=$$(printf '%s' "$($(RID)_CONFIGURE_ARGS)" | sed -n 's/.*--host=\([^ ]*\).*/\1/p'); \
-		if [ -z "$$cross" ] || ! command -v "$$cross-g++" >/dev/null 2>&1; then \
-			echo "Error: cross compiler '$$cross-g++' not found (needed for $(RID))."; \
-			exit 1; \
-		fi; \
+	@cross=$$(printf '%s' "$($(RID)_CONFIGURE_ARGS)" | sed -n 's/.*--host=\([^ ]*\).*/\1/p'); \
+	if [ -n "$$cross" ] && ! command -v "$$cross-g++" >/dev/null 2>&1; then \
+		echo "Error: cross compiler '$$cross-g++' not found (needed for $(RID))."; \
+		exit 1; \
 	fi
 	@echo "==> Configuring pjproject for $(RID) ($($(RID)_CONFIGURE_ARGS))"
 	cd $(PJDIR) && CFLAGS="-O2 -fPIC" CXXFLAGS="-g -O2 -fPIC" ./configure $($(RID)_CONFIGURE_ARGS)
