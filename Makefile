@@ -32,11 +32,12 @@ CONFIGURATION ?= Release
 NAMESPACE    ?= pjsua2
 
 # ---------------------------------------------------------------------------
-# OpenSSL for cross-compiled targets. linux-x64 uses the system OpenSSL
-# (detected natively). Each cross target builds its own static OpenSSL and
-# points pjproject at it via --with-ssl=<prefix>, so TLS is enabled for every
-# RID. linux-arm64 adds -fPIC because its static libs are linked into
-# libpjsua2.so; the Windows DLLs do not need PIC.
+# OpenSSL. linux-x64 links against the system OpenSSL directly. The cross
+# targets (linux-arm64, win-x64, win-x86) need matching OpenSSL dev files at
+# link time, so each cross-builds its own OpenSSL (shared) purely for its
+# headers + import/symlink libs and points pjproject at it via
+# --with-ssl=<prefix>. The native library is linked dynamically and resolves
+# libssl/libcrypto from the target system at runtime — nothing is bundled.
 # ---------------------------------------------------------------------------
 OPENSSL_VERSION ?= 3.6.4
 OPENSSL_DIR    := $(abspath build/openssl)
@@ -51,39 +52,31 @@ win-x86_SSL_PFX     := $(OPENSSL_DIR)/prefix/win-x86
 # Target runtimes. For each RID we define:
 #   <RID>_CONFIGURE_ARGS  pjproject ./configure arguments (--host=... when
 #                         cross-compiling; empty = native host build)
-#   <RID>_CONFIGURE_LIBS  extra libs passed as LIBS=... to ./configure, so
-#                         pjproject's AC_CHECK_LIB probes can detect and link
-#                         the static OpenSSL (e.g. -lgdi32 -lcrypt32 on
-#                         Windows, -ldl on Linux)
 #   <RID>_LIB             native library file name (libpjsua2.so / pjsua2.dll)
 #   <RID>_LDFLAGS         extra link flags (optional)
-#   <RID>_SSL_DEP         OpenSSL static lib prerequisite (cross targets only)
+#   <RID>_SSL_DEP         OpenSSL shared lib prerequisite (cross targets only)
 # ---------------------------------------------------------------------------
 RIDS ?= linux-x64 linux-arm64 win-x64 win-x86
 
 linux-x64_CONFIGURE_ARGS   :=
-linux-x64_CONFIGURE_LIBS   :=
 linux-x64_LIB              := libpjsua2.so
 linux-x64_LDFLAGS          :=
 linux-x64_SSL_DEP          :=
 
 linux-arm64_CONFIGURE_ARGS := --host=aarch64-linux-gnu --with-ssl=$(linux-arm64_SSL_PFX)
-linux-arm64_CONFIGURE_LIBS := -ldl
 linux-arm64_LIB            := libpjsua2.so
 linux-arm64_LDFLAGS        :=
-linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.a
+linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.so.3
 
 win-x64_CONFIGURE_ARGS     := --host=x86_64-w64-mingw32 --with-ssl=$(win-x64_SSL_PFX)
-win-x64_CONFIGURE_LIBS     := -lgdi32 -lcrypt32
 win-x64_LIB                := pjsua2.dll
 win-x64_LDFLAGS            := -static-libgcc -static-libstdc++
-win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.a
+win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.dll.a
 
 win-x86_CONFIGURE_ARGS     := --host=i686-w64-mingw32 --with-ssl=$(win-x86_SSL_PFX)
-win-x86_CONFIGURE_LIBS     := -lgdi32 -lcrypt32
 win-x86_LIB                := pjsua2.dll
 win-x86_LDFLAGS            := -static-libgcc -static-libstdc++
-win-x86_SSL_DEP            := $(win-x86_SSL_PFX)/lib/libssl.a
+win-x86_SSL_DEP            := $(win-x86_SSL_PFX)/lib/libssl.dll.a
 
 # pjproject source layout
 SWIG_DIR     := $(PJDIR)/pjsip-apps/src/swig
@@ -118,27 +111,27 @@ $(OPENSSL_TAR):
 	@mkdir -p $(dir $@)
 	curl -fL $(OPENSSL_URL) -o $@
 
-$(linux-arm64_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
+$(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-linux-arm64
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-linux-arm64
 	cd $(OPENSSL_DIR)/src-linux-arm64/openssl-$(OPENSSL_VERSION) && \
-	    CFLAGS="-O2 -fPIC" ./Configure linux-aarch64 no-shared no-tests \
+	    ./Configure linux-aarch64 shared no-tests \
 	        --prefix=$(linux-arm64_SSL_PFX) --cross-compile-prefix=aarch64-linux-gnu- && \
 	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
 
-$(win-x64_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
+$(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x64
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw64 no-shared no-tests \
+	    ./Configure mingw64 shared no-tests \
 	        --prefix=$(win-x64_SSL_PFX) --cross-compile-prefix=x86_64-w64-mingw32- && \
 	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
 
-$(win-x86_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
+$(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x86
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x86
 	cd $(OPENSSL_DIR)/src-win-x86/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw no-shared no-tests \
+	    ./Configure mingw shared no-tests \
 	        --prefix=$(win-x86_SSL_PFX) --cross-compile-prefix=i686-w64-mingw32- && \
 	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
 
@@ -173,7 +166,7 @@ native-one: $($(RID)_SSL_DEP)
 		fi; \
 	fi
 	@echo "==> Configuring pjproject for $(RID) ($($(RID)_CONFIGURE_ARGS))"
-	cd $(PJDIR) && CFLAGS="-O2 -fPIC" CXXFLAGS="-g -O2 -fPIC" LIBS="$($(RID)_CONFIGURE_LIBS)" ./configure $($(RID)_CONFIGURE_ARGS)
+	cd $(PJDIR) && CFLAGS="-O2 -fPIC" CXXFLAGS="-g -O2 -fPIC" ./configure $($(RID)_CONFIGURE_ARGS)
 	@echo "==> Building pjproject for $(RID)"
 	$(MAKE) -C $(PJDIR) -j$(JOBS) lib
 	@$(MAKE) --no-print-directory native-compile RID=$(RID)
