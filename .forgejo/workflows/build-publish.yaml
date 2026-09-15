@@ -33,21 +33,21 @@ jobs:
         run: make native RIDS="linux-x64 linux-arm64"
 
       - name: Upload linux-x64 native lib
-        uses: https://code.forgejo.org/actions/upload-artifact@v7
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: native-linux-x64
           path: pjsua2.net/runtimes/linux-x64/native
           if-no-files-found: error
 
       - name: Upload linux-arm64 native lib
-        uses: https://code.forgejo.org/actions/upload-artifact@v7
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: native-linux-arm64
           path: pjsua2.net/runtimes/linux-arm64/native
           if-no-files-found: error
 
       - name: Upload C# bindings
-        uses: https://code.forgejo.org/actions/upload-artifact@v7
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: bindings
           path: pjsua2.net/bindings
@@ -81,14 +81,14 @@ jobs:
         run: make native RIDS="win-x64 win-x86"
 
       - name: Upload win-x64 native lib
-        uses: actions/upload-artifact@v7
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: native-win-x64
           path: pjsua2.net/runtimes/win-x64/native
           if-no-files-found: error
 
       - name: Upload win-x86 native lib
-        uses: actions/upload-artifact@v7
+        uses: https://data.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: native-win-x86
           path: pjsua2.net/runtimes/win-x86/native
@@ -107,31 +107,31 @@ jobs:
         run: git fetch --tags
 
       - name: Download linux-x64 native lib
-        uses: actions/download-artifact@v8
+        uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
           name: native-linux-x64
           path: pjsua2.net/runtimes/linux-x64/native
 
       - name: Download linux-arm64 native lib
-        uses: actions/download-artifact@v8
+        uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
           name: native-linux-arm64
           path: pjsua2.net/runtimes/linux-arm64/native
 
       - name: Download win-x64 native lib
-        uses: actions/download-artifact@v8
+        uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
           name: native-win-x64
           path: pjsua2.net/runtimes/win-x64/native
 
       - name: Download win-x86 native lib
-        uses: actions/download-artifact@v8
+        uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
           name: native-win-x86
           path: pjsua2.net/runtimes/win-x86/native
 
       - name: Download C# bindings
-        uses: actions/download-artifact@v8
+        uses: https://data.forgejo.org/forgejo/download-artifact@v4
         with:
           name: bindings
           path: pjsua2.net/bindings
