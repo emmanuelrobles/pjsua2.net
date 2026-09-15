@@ -33,21 +33,21 @@ jobs:
         run: make native RIDS="linux-x64 linux-arm64"
 
       - name: Upload linux-x64 native lib
-        uses: actions/upload-artifact@v7
+        uses: https://code.forgejo.org/actions/upload-artifact@v7
         with:
           name: native-linux-x64
           path: pjsua2.net/runtimes/linux-x64/native
           if-no-files-found: error
 
       - name: Upload linux-arm64 native lib
-        uses: actions/upload-artifact@v7
+        uses: https://code.forgejo.org/actions/upload-artifact@v7
         with:
           name: native-linux-arm64
           path: pjsua2.net/runtimes/linux-arm64/native
           if-no-files-found: error
 
       - name: Upload C# bindings
-        uses: actions/upload-artifact@v7
+        uses: https://code.forgejo.org/actions/upload-artifact@v7
         with:
           name: bindings
           path: pjsua2.net/bindings
