@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  publish-nuget-org:
+  build-linux:
     runs-on: docker
 
     steps:
@@ -30,17 +30,115 @@ jobs:
           apt-get update
           apt-get install -y build-essential pkg-config swig libssl-dev \
             g++-aarch64-linux-gnu \
-            g++-mingw-w64-x86-64 \
-            g++-mingw-w64-i686 \
             perl curl ca-certificates
+
+      - name: Build Linux native libraries
+        run: make native RIDS="linux-x64 linux-arm64"
+
+      - name: Upload linux-x64 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-x64
+          path: pjsua2.net/runtimes/linux-x64/native
+          if-no-files-found: error
+
+      - name: Upload linux-arm64 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-arm64
+          path: pjsua2.net/runtimes/linux-arm64/native
+          if-no-files-found: error
+
+      - name: Upload C# bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings
+          path: pjsua2.net/bindings
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows
+
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+          submodules: recursive
+
+      - name: Setup MSYS2 (MinGW-w64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-i686-gcc
+            make
+            swig
+            perl
+            curl
+            tar
+
+      - name: Build Windows native libraries
+        shell: msys2 {0}
+        run: make native RIDS="win-x64 win-x86"
+
+      - name: Upload win-x64 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x64
+          path: pjsua2.net/runtimes/win-x64/native
+          if-no-files-found: error
+
+      - name: Upload win-x86 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x86
+          path: pjsua2.net/runtimes/win-x86/native
+          if-no-files-found: error
+
+  pack-publish:
+    needs: [build-linux, build-windows]
+    runs-on: docker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download linux-x64 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-linux-x64
+          path: pjsua2.net/runtimes/linux-x64/native
+
+      - name: Download linux-arm64 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-linux-arm64
+          path: pjsua2.net/runtimes/linux-arm64/native
+
+      - name: Download win-x64 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x64
+          path: pjsua2.net/runtimes/win-x64/native
+
+      - name: Download win-x86 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x86
+          path: pjsua2.net/runtimes/win-x86/native
+
+      - name: Download C# bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings
+          path: pjsua2.net/bindings
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-
-      - name: Build native library and bindings
-        run: make native
 
       - name: Resolve package version from tag
         shell: bash

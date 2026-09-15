@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 jobs:
-  build-pack-publish:
+  build-linux:
     if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: docker
 
@@ -22,31 +22,124 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Fetch tags
-        run: git fetch --tags
-
       - name: Install native build dependencies
         run: |
           apt-get update
           apt-get install -y build-essential pkg-config swig libssl-dev \
             g++-aarch64-linux-gnu \
-            g++-mingw-w64-x86-64 \
-            g++-mingw-w64-i686 \
             perl curl ca-certificates
+
+      - name: Build Linux native libraries
+        run: make native RIDS="linux-x64 linux-arm64"
+
+      - name: Upload linux-x64 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-x64
+          path: pjsua2.net/runtimes/linux-x64/native
+          if-no-files-found: error
+
+      - name: Upload linux-arm64 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-linux-arm64
+          path: pjsua2.net/runtimes/linux-arm64/native
+          if-no-files-found: error
+
+      - name: Upload C# bindings
+        uses: actions/upload-artifact@v4
+        with:
+          name: bindings
+          path: pjsua2.net/bindings
+          if-no-files-found: error
+
+  build-windows:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: windows
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup MSYS2 (MinGW-w64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-i686-gcc
+            make
+            swig
+            perl
+            curl
+            tar
+
+      - name: Build Windows native libraries
+        shell: msys2 {0}
+        run: make native RIDS="win-x64 win-x86"
+
+      - name: Upload win-x64 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x64
+          path: pjsua2.net/runtimes/win-x64/native
+          if-no-files-found: error
+
+      - name: Upload win-x86 native lib
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-win-x86
+          path: pjsua2.net/runtimes/win-x86/native
+          if-no-files-found: error
+
+  pack-publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    needs: [build-linux, build-windows]
+    runs-on: docker
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Fetch tags
+        run: git fetch --tags
+
+      - name: Download linux-x64 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-linux-x64
+          path: pjsua2.net/runtimes/linux-x64/native
+
+      - name: Download linux-arm64 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-linux-arm64
+          path: pjsua2.net/runtimes/linux-arm64/native
+
+      - name: Download win-x64 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x64
+          path: pjsua2.net/runtimes/win-x64/native
+
+      - name: Download win-x86 native lib
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x86
+          path: pjsua2.net/runtimes/win-x86/native
+
+      - name: Download C# bindings
+        uses: actions/download-artifact@v4
+        with:
+          name: bindings
+          path: pjsua2.net/bindings
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 10.0.x
-
-      - name: Build native library and bindings
-        run: make native
-
-      - name: Restore
-        run: dotnet restore pjsua2.net/codecrush.pjsua2.csproj
-
-      - name: Build
-        run: dotnet build pjsua2.net/codecrush.pjsua2.csproj -c Release --no-restore
 
       - name: Resolve semantic version from branch
         shell: bash
@@ -102,6 +195,12 @@ jobs:
 
           echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> "${GITHUB_ENV}"
           echo "Resolved version from branch '${BRANCH_NAME}' (${BUMP_KIND} bump): ${PACKAGE_VERSION}"
+
+      - name: Restore
+        run: dotnet restore pjsua2.net/codecrush.pjsua2.csproj
+
+      - name: Build
+        run: dotnet build pjsua2.net/codecrush.pjsua2.csproj -c Release --no-restore
 
       - name: Pack
         run: dotnet pack pjsua2.net/codecrush.pjsua2.csproj -c Release --no-build -p:Version=${{ env.PACKAGE_VERSION }}
