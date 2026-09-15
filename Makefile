@@ -119,9 +119,13 @@ $(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 	        --prefix=$(linux-arm64_SSL_PFX) --cross-compile-prefix=aarch64-linux-gnu- && \
 	    $(MAKE) -j$(JOBS) && $(MAKE) install_sw
 
+# Drop the "-x64" suffix that mingw.pm appends for the mingw64 target, so the
+# 64-bit DLLs are named libssl-3.dll / libcrypto-3.dll (matching the in-house
+# OpenSSL deployment) instead of libssl-3-x64.dll / libcrypto-3-x64.dll.
 $(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x64
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
+	sed -i 's/"-x64"/""/' $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION)/Configurations/platform/mingw.pm
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
 	    ./Configure mingw64 shared no-tests \
 	        --prefix=$(win-x64_SSL_PFX) --cross-compile-prefix=x86_64-w64-mingw32- && \
