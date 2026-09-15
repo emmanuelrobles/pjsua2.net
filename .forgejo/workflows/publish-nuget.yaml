@@ -102,7 +102,7 @@ jobs:
       - name: Build Windows native libraries
         shell: msys2 {0}
         run: |
-          export PATH="/mingw32/bin:$PATH"
+          export PATH="$PATH:/mingw32/bin"
           make native RIDS="win-x64 win-x86"
 
       - name: Upload win-x64 native lib
