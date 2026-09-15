@@ -10,5 +10,8 @@ pjsua2.net/runtimes/
 # NuGet packages
 artifacts/
 
+# Cross-built OpenSSL
+build/
+
 # IDE
 .idea/
