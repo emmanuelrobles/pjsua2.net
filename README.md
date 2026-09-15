@@ -12,7 +12,7 @@ consumers only need to reference the NuGet package.
 | --- | --- |
 | NuGet package ID | `CodeCrush.pjsua2` |
 | Managed namespace / assembly | `pjsua2` |
-| Target framework | `net10.0` |
+| Target framework | `netstandard2.0` |
 | Supported runtimes | `linux-x64`, `linux-arm64`, `win-x64`, `win-x86` |
 
 ## Prerequisites
@@ -107,7 +107,7 @@ Windows host and Linux RIDs on a Linux host.
 ## Package contents
 
 ```
-lib/net10.0/pjsua2.dll
+lib/netstandard2.0/codecrush.pjsua2.dll
 runtimes/linux-x64/native/libpjsua2.so
 runtimes/linux-arm64/native/libpjsua2.so
 runtimes/win-x64/native/pjsua2.dll
@@ -133,10 +133,12 @@ OpenSSL installed on the target system:
 Targets without OpenSSL on the build host (`linux-arm64`, `win-x64`, `win-x86`)
 get a pinned OpenSSL (`OPENSSL_VERSION`, default `3.6.4`) built under
 `build/openssl/` purely for its headers and import/symlink libraries, then
-point pjproject at it via `--with-ssl`. Only the dev files are used at link
-time — nothing is bundled into the package and no rpath is set, so the library
-resolves OpenSSL from the system at runtime (unqualified `libssl.so.3` /
-`libssl-3.dll` dependencies).
+point pjproject at it via `--with-ssl`. Only `libcrypto` + `libssl` are built
+(`make build_libs`) and their dev files installed (`make install_dev`); the
+OpenSSL CLI, tests and docs are skipped to keep the build fast. Nothing is
+bundled into the package and no rpath is set, so the library resolves OpenSSL
+from the system at runtime (unqualified `libssl.so.3` / `libssl-3.dll`
+dependencies).
 
 - The dependency is on OpenSSL **3.x** specifically (`libssl.so.3` /
   `libssl-3.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
@@ -160,6 +162,9 @@ manual dispatch).
 - `build-linux` (docker) builds `linux-x64` + `linux-arm64`; `build-windows`
   (windows) builds `win-x64` + `win-x86` via MSYS2/MinGW-w64; `pack-publish`
   collects the native libraries and packs/publishes the package.
+- The OpenSSL source build under `build/openssl/` is cached between runs with
+  `actions/cache`, keyed on the `Makefile` contents — so only the first build of
+  a given OpenSSL version compiles from scratch.
 - Versioning is derived from the source branch name and the latest `vX.Y.Z` tag:
   - `feature/*` bumps **minor**
   - `fix/*` bumps **patch**
