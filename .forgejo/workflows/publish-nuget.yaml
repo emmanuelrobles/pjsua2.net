@@ -31,7 +31,8 @@ jobs:
           apt-get install -y build-essential pkg-config swig libssl-dev \
             g++-aarch64-linux-gnu \
             g++-mingw-w64-x86-64 \
-            g++-mingw-w64-i686
+            g++-mingw-w64-i686 \
+            perl curl ca-certificates
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@v5
