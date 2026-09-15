@@ -119,7 +119,7 @@ $(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-linux-arm64
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-linux-arm64
 	cd $(OPENSSL_DIR)/src-linux-arm64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure linux-aarch64 shared no-tests \
+	    ./Configure linux-aarch64 shared no-tests no-apps \
 	        --prefix=$(linux-arm64_SSL_PFX) --cross-compile-prefix=aarch64-linux-gnu- && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
@@ -131,14 +131,14 @@ $(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
 	sed -i 's/"-x64"/""/' $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION)/Configurations/platform/mingw.pm
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw64 shared no-tests --prefix=$(win-x64_SSL_PFX) && \
+	    ./Configure mingw64 shared no-tests no-apps --prefix=$(win-x64_SSL_PFX) && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
 $(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x86
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x86
 	cd $(OPENSSL_DIR)/src-win-x86/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw shared no-tests \
+	    ./Configure mingw shared no-tests no-apps \
 	        --prefix=$(win-x86_SSL_PFX) --cross-compile-prefix=i686-w64-mingw32- && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
