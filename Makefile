@@ -66,7 +66,7 @@ SWIG_INC     := -I$(PJDIR)/pjlib/include \
 CONFIG_SITE  := $(PJDIR)/pjlib/include/pj/config_site.h
 
 # .NET project layout
-DOTNET_PROJ  := pjsua2.net/pjsua2.net.csproj
+DOTNET_PROJ  := pjsua2.net/codecrush.pjsua2.csproj
 BINDINGS_DIR := pjsua2.net/bindings
 NATIVE_DIR   := pjsua2.net/native
 RUNTIME_BASE := pjsua2.net/runtimes

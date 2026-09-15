@@ -63,13 +63,13 @@ jobs:
           echo "Publishing package version ${PACKAGE_VERSION} from tag ${TAG_NAME}."
 
       - name: Restore
-        run: dotnet restore pjsua2.net/pjsua2.net.csproj
+        run: dotnet restore pjsua2.net/codecrush.pjsua2.csproj
 
       - name: Build
-        run: dotnet build pjsua2.net/pjsua2.net.csproj -c Release --no-restore
+        run: dotnet build pjsua2.net/codecrush.pjsua2.csproj -c Release --no-restore
 
       - name: Pack
-        run: dotnet pack pjsua2.net/pjsua2.net.csproj -c Release --no-build -p:Version=${{ env.PACKAGE_VERSION }}
+        run: dotnet pack pjsua2.net/codecrush.pjsua2.csproj -c Release --no-build -p:Version=${{ env.PACKAGE_VERSION }}
 
       - name: Push package to NuGet.org
         env:
