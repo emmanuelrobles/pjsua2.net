@@ -79,7 +79,12 @@ linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.so.3
 
 win-x64_CONFIGURE_ARGS     := --with-ssl=$(win-x64_SSL_PFX_WIN)
 win-x64_LIB                := pjsua2.dll
-win-x64_LDFLAGS            := -static-libgcc -static-libstdc++ -lssl -lcrypto
+# Link the OpenSSL import libs by absolute path: the -L/-l search path is not
+# reliably resolved on MSYS2, so reference libssl.dll.a / libcrypto.dll.a
+# directly. They are still import libs, so pjsua2.dll keeps a dynamic
+# dependency on the standard libssl-3-x64.dll / libcrypto-3-x64.dll at runtime.
+win-x64_LDFLAGS            := -static-libgcc -static-libstdc++ \
+	$(win-x64_SSL_PFX_WIN)/lib/libssl.dll.a $(win-x64_SSL_PFX_WIN)/lib/libcrypto.dll.a
 win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.dll.a
 
 win-x86_CONFIGURE_ARGS     := --host=i686-w64-mingw32 --with-ssl=$(win-x86_SSL_PFX)
