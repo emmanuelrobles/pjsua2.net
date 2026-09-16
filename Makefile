@@ -148,8 +148,14 @@ all: native dotnet-build
 
 # --- SWIG bindings (generated once; identical for every RID) ---------------
 
+# Modern config.guess reports the MSYS2/MINGW64 host as x86_64-pc-mingw64,
+# which pjproject's aconfigure does not recognize as 64-bit (it only matches
+# *_64-w64-mingw*), so PJ_WIN64 is left undefined and pj_sock_t falls back to
+# a 4-byte long. On win-x64 that makes pj_fd_set_t too small to hold a winsock2
+# fd_set, tripping the assert in sock_select.c. Define it here, guarded so the
+# linux/win-x86 builds are unaffected.
 $(CONFIG_SITE):
-	@touch $@
+	@printf '#if defined(_WIN64)\n#   define PJ_WIN64 1\n#endif\n' > $@
 
 $(WRAP_CPP): $(SWIG_IFACE) $(CONFIG_SITE)
 	@mkdir -p $(NATIVE_DIR) $(BINDINGS_DIR)
@@ -206,6 +212,7 @@ pack: dotnet-build
 clean:
 	rm -rf $(BINDINGS_DIR) $(NATIVE_DIR) $(RUNTIME_BASE) $(OUT_DIR)
 	rm -rf pjsua2.net/bin pjsua2.net/obj
+	rm -f $(CONFIG_SITE)
 
 distclean: clean
 	$(MAKE) -C $(PJDIR) clean
