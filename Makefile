@@ -32,16 +32,18 @@ CONFIGURATION ?= Release
 NAMESPACE    ?= pjsua2
 
 # ---------------------------------------------------------------------------
-# OpenSSL. linux-x64 links against the system OpenSSL directly. The other
-# targets need matching OpenSSL dev files at link time, so each builds its own
-# OpenSSL (shared) purely for its headers + import/symlink libs and points
-# pjproject at it via --with-ssl=<prefix>. The native library is linked
-# dynamically and resolves libssl/libcrypto from the target system at runtime
-# — nothing is bundled.
+# OpenSSL. Native targets link against OpenSSL provided by the build host,
+# autodetected by pjproject's ./configure from its default include/lib paths:
+#   linux-x64  system OpenSSL (libssl-dev)
+#   win-x64    MSYS2's mingw-w64-x86_64-openssl package (/mingw64)
+# The cross-compiled targets have no such OpenSSL on the build host, so each
+# builds its own OpenSSL (shared) purely for its headers + import/symlink libs
+# and points pjproject at it via --with-ssl=<prefix>. The native library is
+# always linked dynamically and resolves libssl/libcrypto from the target
+# system at runtime — nothing is bundled.
 #
 #   linux-arm64  cross-built on the Linux (docker) runner
 #   win-x86      cross-built on the Linux runner (i686-w64-mingw32)
-#   win-x64      built natively on the Windows runner (MinGW x64 via MSYS2)
 # ---------------------------------------------------------------------------
 OPENSSL_VERSION ?= 3.6.4
 OPENSSL_DIR    := $(abspath build/openssl)
@@ -49,7 +51,6 @@ OPENSSL_TAR    := $(OPENSSL_DIR)/openssl-$(OPENSSL_VERSION).tar.gz
 OPENSSL_URL    := https://github.com/openssl/openssl/releases/download/openssl-$(OPENSSL_VERSION)/openssl-$(OPENSSL_VERSION).tar.gz
 
 linux-arm64_SSL_PFX := $(OPENSSL_DIR)/prefix/linux-arm64
-win-x64_SSL_PFX     := $(OPENSSL_DIR)/prefix/win-x64
 win-x86_SSL_PFX     := $(OPENSSL_DIR)/prefix/win-x86
 
 # ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ win-x86_SSL_PFX     := $(OPENSSL_DIR)/prefix/win-x86
 #                         cross-compiling; empty = native host build)
 #   <RID>_LIB             native library file name (libpjsua2.so / pjsua2.dll)
 #   <RID>_LDFLAGS         extra link flags (optional)
-#   <RID>_SSL_DEP         OpenSSL shared lib prerequisite (non-native targets)
+#   <RID>_SSL_DEP         OpenSSL dev-file prerequisite (cross targets only)
 # ---------------------------------------------------------------------------
 RIDS ?= linux-x64 linux-arm64 win-x64 win-x86
 
@@ -72,10 +73,10 @@ linux-arm64_LIB            := libpjsua2.so
 linux-arm64_LDFLAGS        :=
 linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.so.3
 
-win-x64_CONFIGURE_ARGS     := --with-ssl=$(win-x64_SSL_PFX)
+win-x64_CONFIGURE_ARGS     :=
 win-x64_LIB                := pjsua2.dll
 win-x64_LDFLAGS            := -static-libgcc -static-libstdc++
-win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.dll.a
+win-x64_SSL_DEP            :=
 
 win-x86_CONFIGURE_ARGS     := --host=i686-w64-mingw32 --with-ssl=$(win-x86_SSL_PFX)
 win-x86_LIB                := pjsua2.dll
@@ -123,17 +124,8 @@ $(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 	        --prefix=$(linux-arm64_SSL_PFX) --cross-compile-prefix=aarch64-linux-gnu- && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
-# Keep the "-x64" suffix that mingw.pm appends for the mingw64 target, so the
-# DLLs are named libssl-3-x64.dll / libcrypto-3-x64.dll — the standard names
-# shipped by OpenSSL-for-Windows installs. This lets pjsua2.dll resolve the
-# client's installed (e.g. FIPS) OpenSSL at runtime instead of a bundled copy.
-$(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
-	@mkdir -p $(OPENSSL_DIR)/src-win-x64
-	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
-	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw64 shared no-tests no-apps --prefix=$(win-x64_SSL_PFX) && \
-	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
-
+# The 32-bit `mingw` target names its DLLs libssl-3.dll / libcrypto-3.dll (no
+# suffix), the standard 32-bit OpenSSL-for-Windows names.
 $(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x86
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x86
