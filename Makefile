@@ -75,7 +75,7 @@ linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.so.3
 
 win-x64_CONFIGURE_ARGS     :=
 win-x64_LIB                := pjsua2.dll
-win-x64_LDFLAGS            := -static-libgcc -static-libstdc++
+win-x64_LDFLAGS            := -static-libgcc -static-libstdc++ -lssl -lcrypto
 win-x64_SSL_DEP            :=
 
 win-x86_CONFIGURE_ARGS     := --host=i686-w64-mingw32 --with-ssl=$(win-x86_SSL_PFX)
@@ -146,8 +146,17 @@ all: native dotnet-build
 # a 4-byte long. On win-x64 that makes pj_fd_set_t too small to hold a winsock2
 # fd_set, tripping the assert in sock_select.c. Define it here, guarded so the
 # linux/win-x86 builds are unaffected.
+#
+# PJ_HAS_SSL_SOCK is forced to 1 because pjproject's ./configure only enables
+# TLS when its OpenSSL detection succeeds, which is unreliable on the Windows
+# runner (it treats the MSYS2 native build as a cross-compile and skips the
+# OpenSSL probe, or fails to resolve the --with-ssl prefix path). Forcing it
+# here guarantees the TLS code is compiled in for every RID; the OpenSSL
+# symbols are satisfied by linking -lssl -lcrypto (see <RID>_LDFLAGS), and a
+# missing OpenSSL then surfaces as a loud link error instead of a silently
+# TLS-less DLL.
 $(CONFIG_SITE):
-	@printf '#if defined(_WIN64)\n#   define PJ_WIN64 1\n#endif\n' > $@
+	@printf '#if defined(_WIN64)\n#   define PJ_WIN64 1\n#endif\n#define PJ_HAS_SSL_SOCK 1\n' > $@
 
 $(WRAP_CPP): $(SWIG_IFACE) $(CONFIG_SITE)
 	@mkdir -p $(NATIVE_DIR) $(BINDINGS_DIR)
