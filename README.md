@@ -126,7 +126,7 @@ OpenSSL installed on the target system:
 | ---           | ---                                             | ---                         |
 | `linux-x64`   | host `libssl.so.3` (native)                     | system OpenSSL              |
 | `linux-arm64` | cross-built dev files (headers + symlink libs)  | system `libssl.so.3`        |
-| `win-x64`     | native import lib `libssl.dll.a` (MinGW)        | system `libssl-3.dll`       |
+| `win-x64`     | native import lib `libssl.dll.a` (MinGW)        | system `libssl-3-x64.dll`   |
 | `win-x86`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
 
 Targets without OpenSSL on the build host (`linux-arm64`, `win-x64`, `win-x86`)
@@ -136,20 +136,23 @@ point pjproject at it via `--with-ssl`. Only `libcrypto` + `libssl` are built
 (`make build_libs`) and their dev files installed (`make install_dev`); the
 OpenSSL CLI, tests and docs are skipped to keep the build fast. Nothing is
 bundled into the package and no rpath is set, so the library resolves OpenSSL
-from the system at runtime (unqualified `libssl.so.3` / `libssl-3.dll`
-dependencies).
+from the system at runtime (unqualified `libssl.so.3` /
+`libssl-3-x64.dll` / `libssl-3.dll` dependencies).
 
 - The dependency is on OpenSSL **3.x** specifically (`libssl.so.3` /
-  `libssl-3.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
-- **Windows does not ship OpenSSL.** An OpenSSL 3.x build
-  (`libssl-3.dll` / `libcrypto-3.dll`) must be reachable on the target
-  machine via `PATH` or the application directory.
-- The 64-bit Windows DLL is deliberately named `libssl-3.dll` (no `-x64`
-  suffix). OpenSSL normally names the MinGW 64-bit build `libssl-3-x64.dll`;
-  the Makefile patches that suffix off so the dependency matches the existing
-  `!Shared\Setup\OpenSSL.wxi` deployment.
-- Because `linux-x64` links the system OpenSSL dynamically, host-level OpenSSL
-  configuration (e.g. FIPS mode) applies there.
+  `libssl-3-x64.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
+- **Windows does not ship OpenSSL.** A standard OpenSSL 3.x install
+  (`libssl-3-x64.dll` / `libcrypto-3-x64.dll` for 64-bit) must be reachable on
+  the target machine via `PATH` or the application directory.
+- The 64-bit Windows dependency uses the **standard** `libssl-3-x64.dll` name
+  (the `-x64` suffix that MinGW OpenSSL appends), so any stock
+  OpenSSL-for-Windows build (Win64OpenSSL, MSYS2, vcpkg, etc.) satisfies it.
+  No OpenSSL is bundled, so the client's installed copy — including a
+  FIPS-enabled one — is what actually loads.
+- Because OpenSSL is linked dynamically and resolved from the system, host-level
+  OpenSSL configuration applies at runtime: a FIPS-enabled install (where the
+  FIPS provider is activated globally via `openssl.cnf`) makes TLS run in FIPS
+  mode automatically.
 
 ## CI/CD
 
