@@ -137,11 +137,14 @@ $(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 
 # win-x64/win-x86 build OpenSSL as static libraries (no-shared) so they can be
 # linked straight into pjsua2.dll with no runtime OpenSSL DLL dependency.
+# --libdir=lib is required: the mingw64 target defaults to lib64 (multilib=64),
+# which would otherwise install the static libs where the link step can't find.
 $(win-x64_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x64
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw64 no-shared no-tests no-apps --prefix=$(win-x64_SSL_PFX) && \
+	    ./Configure mingw64 no-shared no-tests no-apps \
+	        --prefix=$(win-x64_SSL_PFX) --libdir=lib && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
 $(win-x86_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
@@ -149,7 +152,8 @@ $(win-x86_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x86
 	cd $(OPENSSL_DIR)/src-win-x86/openssl-$(OPENSSL_VERSION) && \
 	    ./Configure mingw no-shared no-tests no-apps \
-	        --prefix=$(win-x86_SSL_PFX) --cross-compile-prefix=i686-w64-mingw32- && \
+	        --prefix=$(win-x86_SSL_PFX) --libdir=lib \
+	        --cross-compile-prefix=i686-w64-mingw32- && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
 .PHONY: all configure pjproject native native-one native-compile dotnet-build pack clean distclean
