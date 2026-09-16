@@ -33,15 +33,15 @@ NAMESPACE    ?= pjsua2
 
 # ---------------------------------------------------------------------------
 # OpenSSL. linux-x64 links against the system OpenSSL directly (autodetected
-# by pjproject's ./configure). The other targets need matching OpenSSL dev
-# files at link time, so each builds its own OpenSSL (shared) purely for its
-# headers + import/symlink libs and points pjproject at it via --with-ssl.
-# The native library is always linked dynamically and resolves libssl/libcrypto
-# from the target system at runtime — nothing is bundled.
+# by pjproject's ./configure). The foreign targets build their own OpenSSL
+# purely for its headers + link libs and point pjproject at it via --with-ssl:
 #
-#   linux-arm64  cross-built on the Linux (docker) runner
-#   win-x86      cross-built on the Linux runner (i686-w64-mingw32)
-#   win-x64      built natively on the Windows runner (MinGW x64 via MSYS2)
+#   linux-arm64  cross-built on the Linux runner, linked dynamically
+#   win-x86      cross-built on the Linux runner (i686-w64-mingw32), static
+#   win-x64      built natively on the Windows runner (MinGW x64), static
+#
+# The Windows targets link OpenSSL statically into pjsua2.dll so no OpenSSL
+# DLL is required on the end-user's machine (TLS works out of the box).
 # ---------------------------------------------------------------------------
 OPENSSL_VERSION ?= 3.6.4
 OPENSSL_DIR    := $(abspath build/openssl)
@@ -79,18 +79,20 @@ linux-arm64_SSL_DEP        := $(linux-arm64_SSL_PFX)/lib/libssl.so.3
 
 win-x64_CONFIGURE_ARGS     := --with-ssl=$(win-x64_SSL_PFX_WIN)
 win-x64_LIB                := pjsua2.dll
-# Link the OpenSSL import libs by absolute path: the -L/-l search path is not
-# reliably resolved on MSYS2, so reference libssl.dll.a / libcrypto.dll.a
-# directly. They are still import libs, so pjsua2.dll keeps a dynamic
-# dependency on the standard libssl-3-x64.dll / libcrypto-3-x64.dll at runtime.
+# Link OpenSSL statically by absolute path (the -L/-l search path is not
+# reliably resolved on MSYS2). libssl before libcrypto, plus the Windows
+# system libs the static OpenSSL needs (ws2_32/gdi32/crypt32).
 win-x64_LDFLAGS            := -static-libgcc -static-libstdc++ \
-	$(win-x64_SSL_PFX_WIN)/lib/libssl.dll.a $(win-x64_SSL_PFX_WIN)/lib/libcrypto.dll.a
-win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.dll.a
+	$(win-x64_SSL_PFX_WIN)/lib/libssl.a $(win-x64_SSL_PFX_WIN)/lib/libcrypto.a \
+	-lws2_32 -lgdi32 -lcrypt32
+win-x64_SSL_DEP            := $(win-x64_SSL_PFX)/lib/libssl.a
 
 win-x86_CONFIGURE_ARGS     := --host=i686-w64-mingw32 --with-ssl=$(win-x86_SSL_PFX)
 win-x86_LIB                := pjsua2.dll
-win-x86_LDFLAGS            := -static-libgcc -static-libstdc++
-win-x86_SSL_DEP            := $(win-x86_SSL_PFX)/lib/libssl.dll.a
+win-x86_LDFLAGS            := -static-libgcc -static-libstdc++ \
+	$(win-x86_SSL_PFX)/lib/libssl.a $(win-x86_SSL_PFX)/lib/libcrypto.a \
+	-lws2_32 -lgdi32 -lcrypt32
+win-x86_SSL_DEP            := $(win-x86_SSL_PFX)/lib/libssl.a
 
 # pjproject source layout
 SWIG_DIR     := $(PJDIR)/pjsip-apps/src/swig
@@ -133,23 +135,20 @@ $(linux-arm64_SSL_PFX)/lib/libssl.so.3: $(OPENSSL_TAR)
 	        --prefix=$(linux-arm64_SSL_PFX) --cross-compile-prefix=aarch64-linux-gnu- && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
-# The 64-bit `mingw64` target names its DLLs libssl-3-x64.dll /
-# libcrypto-3-x64.dll — the standard OpenSSL-for-Windows 64-bit names, so the
-# client's installed (e.g. FIPS) OpenSSL can satisfy pjsua2.dll at runtime.
-$(win-x64_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
+# win-x64/win-x86 build OpenSSL as static libraries (no-shared) so they can be
+# linked straight into pjsua2.dll with no runtime OpenSSL DLL dependency.
+$(win-x64_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x64
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x64
 	cd $(OPENSSL_DIR)/src-win-x64/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw64 shared no-tests no-apps --prefix=$(win-x64_SSL_PFX) && \
+	    ./Configure mingw64 no-shared no-tests no-apps --prefix=$(win-x64_SSL_PFX) && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
-# The 32-bit `mingw` target names its DLLs libssl-3.dll / libcrypto-3.dll (no
-# suffix), the standard 32-bit OpenSSL-for-Windows names.
-$(win-x86_SSL_PFX)/lib/libssl.dll.a: $(OPENSSL_TAR)
+$(win-x86_SSL_PFX)/lib/libssl.a: $(OPENSSL_TAR)
 	@mkdir -p $(OPENSSL_DIR)/src-win-x86
 	tar -xzf $(OPENSSL_TAR) -C $(OPENSSL_DIR)/src-win-x86
 	cd $(OPENSSL_DIR)/src-win-x86/openssl-$(OPENSSL_VERSION) && \
-	    ./Configure mingw shared no-tests no-apps \
+	    ./Configure mingw no-shared no-tests no-apps \
 	        --prefix=$(win-x86_SSL_PFX) --cross-compile-prefix=i686-w64-mingw32- && \
 	    $(MAKE) -j$(JOBS) build_libs && $(MAKE) install_dev
 
@@ -170,9 +169,9 @@ all: native dotnet-build
 # TLS when its OpenSSL detection succeeds, which is unreliable on the Windows
 # runner (the native mingw64 gcc can't resolve the --with-ssl prefix path, so
 # the OpenSSL probe fails). Forcing it here guarantees the TLS code is compiled
-# in for every RID; the OpenSSL symbols are satisfied by linking -lssl -lcrypto
-# (see <RID>_LDFLAGS), and a missing OpenSSL then surfaces as a loud link error
-# instead of a silently TLS-less DLL.
+# in for every RID; the OpenSSL symbols are satisfied by linking libssl.a /
+# libcrypto.a (see <RID>_LDFLAGS), and a missing OpenSSL then surfaces as a
+# loud link error instead of a silently TLS-less DLL.
 $(CONFIG_SITE):
 	@printf '#if defined(_WIN64)\n#   define PJ_WIN64 1\n#endif\n#define PJ_HAS_SSL_SOCK 1\n' > $@
 
