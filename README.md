@@ -126,14 +126,17 @@ OpenSSL installed on the target system:
 | ---           | ---                                             | ---                         |
 | `linux-x64`   | host `libssl.so.3` (native)                     | system OpenSSL              |
 | `linux-arm64` | cross-built dev files (headers + symlink libs)  | system `libssl.so.3`        |
-| `win-x64`     | MSYS2 `mingw-w64-x86_64-openssl` (autodetected) | system `libssl-3-x64.dll`   |
+| `win-x64`     | MSYS2 `mingw-w64-x86_64-openssl` (forced link)  | system `libssl-3-x64.dll`  |
 | `win-x86`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
 
 Native targets (`linux-x64`, `win-x64`) link against OpenSSL already present on
-the build host and let pjproject's `./configure` autodetect it: `linux-x64`
-uses the system `libssl-dev`, and `win-x64` uses MSYS2's
-`mingw-w64-x86_64-openssl` package (whose `/mingw64` include/lib dirs are the
-toolchain's default search paths, so no `--with-ssl` prefix is needed). The
+the build host: `linux-x64` uses the system `libssl-dev` (autodetected by
+`./configure`), and `win-x64` uses MSYS2's `mingw-w64-x86_64-openssl` package
+(whose `/mingw64` include/lib dirs are the toolchain's default search paths).
+Because `./configure`'s OpenSSL probe is unreliable on the Windows runner,
+`PJ_HAS_SSL_SOCK` is forced to `1` in `config_site.h` and `-lssl -lcrypto` are
+added to the win-x64 link flags, so TLS is compiled in unconditionally — a
+missing OpenSSL surfaces as a build error rather than a TLS-less DLL. The
 cross-compiled targets (`linux-arm64`, `win-x86`) get a pinned OpenSSL
 (`OPENSSL_VERSION`, default `3.6.4`) built under `build/openssl/` purely for its
 headers and import/symlink libraries, then point pjproject at it via
