@@ -126,18 +126,22 @@ OpenSSL installed on the target system:
 | ---           | ---                                             | ---                         |
 | `linux-x64`   | host `libssl.so.3` (native)                     | system OpenSSL              |
 | `linux-arm64` | cross-built dev files (headers + symlink libs)  | system `libssl.so.3`        |
-| `win-x64`     | native import lib `libssl.dll.a` (MinGW)        | system `libssl-3-x64.dll`   |
+| `win-x64`     | MSYS2 `mingw-w64-x86_64-openssl` (autodetected) | system `libssl-3-x64.dll`   |
 | `win-x86`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
 
-Targets without OpenSSL on the build host (`linux-arm64`, `win-x64`, `win-x86`)
-get a pinned OpenSSL (`OPENSSL_VERSION`, default `3.6.4`) built under
-`build/openssl/` purely for its headers and import/symlink libraries, then
-point pjproject at it via `--with-ssl`. Only `libcrypto` + `libssl` are built
-(`make build_libs`) and their dev files installed (`make install_dev`); the
-OpenSSL CLI, tests and docs are skipped to keep the build fast. Nothing is
-bundled into the package and no rpath is set, so the library resolves OpenSSL
-from the system at runtime (unqualified `libssl.so.3` /
-`libssl-3-x64.dll` / `libssl-3.dll` dependencies).
+Native targets (`linux-x64`, `win-x64`) link against OpenSSL already present on
+the build host and let pjproject's `./configure` autodetect it: `linux-x64`
+uses the system `libssl-dev`, and `win-x64` uses MSYS2's
+`mingw-w64-x86_64-openssl` package (whose `/mingw64` include/lib dirs are the
+toolchain's default search paths, so no `--with-ssl` prefix is needed). The
+cross-compiled targets (`linux-arm64`, `win-x86`) get a pinned OpenSSL
+(`OPENSSL_VERSION`, default `3.6.4`) built under `build/openssl/` purely for its
+headers and import/symlink libraries, then point pjproject at it via
+`--with-ssl`. Only `libcrypto` + `libssl` are built (`make build_libs`) and
+their dev files installed (`make install_dev`); the OpenSSL CLI, tests and docs
+are skipped to keep the build fast. Nothing is bundled into the package and no
+rpath is set, so the library resolves OpenSSL from the system at runtime
+(unqualified `libssl.so.3` / `libssl-3-x64.dll` / `libssl-3.dll` dependencies).
 
 - The dependency is on OpenSSL **3.x** specifically (`libssl.so.3` /
   `libssl-3-x64.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
