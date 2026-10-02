@@ -29,8 +29,8 @@ Common prerequisites:
 - [.NET SDK 10](https://dotnet.microsoft.com/) (see `global.json`)
 - SWIG 4.x (`swig`)
 - A C/C++ toolchain (`gcc`, `g++`, `make`)
-- `libssl-dev` (enables TLS / SIPS / DTLS-SRTP)
-- `perl` and `curl` (used to build OpenSSL for the cross targets)
+- `libssl-dev` (Linux host only — native `linux-x64` OpenSSL)
+- `perl`, `curl` and `tar` (to build OpenSSL from source for the non-native targets)
 
 On Debian/Ubuntu (Linux host):
 
@@ -89,7 +89,7 @@ packs the combined NuGet package into
 | `CONFIGURATION` | `Release`                          | dotnet build configuration |
 | `JOBS`          | `$(nproc)`                         | Parallel pjproject build jobs |
 | `NAMESPACE`     | `pjsua2`                           | C# namespace for the bindings |
-| `OPENSSL_VERSION` | `3.6.4`                          | OpenSSL release cross-built for the cross targets |
+| `OPENSSL_VERSION` | `3.6.4`                          | OpenSSL release built from source for the foreign targets |
 
 ### Building a specific RID
 
@@ -113,43 +113,49 @@ runtimes/win-x64/native/pjsua2.dll
 runtimes/win-x86/native/pjsua2.dll
 ```
 
-The native library is linked statically against all pjproject components, but
-links OpenSSL **dynamically** — see [TLS / OpenSSL](#tls--openssl) below.
+The native library is linked statically against all pjproject components.
+OpenSSL is linked **dynamically** on Linux and **statically** on Windows — see
+[TLS / OpenSSL](#tls--openssl) below.
 
 ## TLS / OpenSSL
 
-TLS (SIPS, DTLS-SRTP, SRTP keying) is enabled for **every** runtime. OpenSSL is
-always linked **dynamically**, so at runtime the native library uses the
-OpenSSL installed on the target system:
+TLS (SIPS, DTLS-SRTP, SRTP keying) is enabled for **every** runtime. Linux links
+OpenSSL **dynamically**; Windows links it **statically** into `pjsua2.dll`:
 
-| RID           | Link-time OpenSSL                               | Runtime OpenSSL             |
-| ---           | ---                                             | ---                         |
-| `linux-x64`   | host `libssl.so.3` (native)                     | system OpenSSL              |
-| `linux-arm64` | cross-built dev files (headers + symlink libs)  | system `libssl.so.3`        |
-| `win-x64`     | native import lib `libssl.dll.a` (MinGW)        | system `libssl-3.dll`       |
-| `win-x86`     | cross-built import lib `libssl.dll.a`           | system `libssl-3.dll`       |
+| RID           | Link-time OpenSSL                              | Runtime OpenSSL            |
+| ---           | ---                                            | ---                        |
+| `linux-x64`   | host `libssl.so.3` (native)                    | system OpenSSL             |
+| `linux-arm64` | cross-built dev files (headers + symlink libs) | system `libssl.so.3`       |
+| `win-x64`     | native static `libssl.a`/`libcrypto.a` (MinGW) | none (statically linked)   |
+| `win-x86`     | cross-built static `libssl.a`/`libcrypto.a`    | none (statically linked)   |
 
-Targets without OpenSSL on the build host (`linux-arm64`, `win-x64`, `win-x86`)
-get a pinned OpenSSL (`OPENSSL_VERSION`, default `3.6.4`) built under
-`build/openssl/` purely for its headers and import/symlink libraries, then
-point pjproject at it via `--with-ssl`. Only `libcrypto` + `libssl` are built
-(`make build_libs`) and their dev files installed (`make install_dev`); the
-OpenSSL CLI, tests and docs are skipped to keep the build fast. Nothing is
-bundled into the package and no rpath is set, so the library resolves OpenSSL
-from the system at runtime (unqualified `libssl.so.3` / `libssl-3.dll`
-dependencies).
+`linux-x64` links against the system `libssl-dev` (autodetected by
+`./configure`). `linux-arm64` builds a pinned OpenSSL (`OPENSSL_VERSION`,
+default `3.6.4`) under `build/openssl/` purely for its headers and symlink
+libraries, then points pjproject at it via `--with-ssl`.
 
-- The dependency is on OpenSSL **3.x** specifically (`libssl.so.3` /
-  `libssl-3.dll`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it.
-- **Windows does not ship OpenSSL.** An OpenSSL 3.x build
-  (`libssl-3.dll` / `libcrypto-3.dll`) must be reachable on the target
-  machine via `PATH` or the application directory.
-- The 64-bit Windows DLL is deliberately named `libssl-3.dll` (no `-x64`
-  suffix). OpenSSL normally names the MinGW 64-bit build `libssl-3-x64.dll`;
-  the Makefile patches that suffix off so the dependency matches the existing
-  `!Shared\Setup\OpenSSL.wxi` deployment.
-- Because `linux-x64` links the system OpenSSL dynamically, host-level OpenSSL
-  configuration (e.g. FIPS mode) applies there.
+`win-x64` and `win-x86` build the same pinned OpenSSL as **static** libraries
+(`no-shared`) and link `libssl.a` + `libcrypto.a` (plus the `ws2_32` / `gdi32` /
+`crypt32` system libs) directly into `pjsua2.dll`. Only `libcrypto` + `libssl`
+are built (`make build_libs`) and installed (`make install_dev`); the OpenSSL
+CLI, tests and docs are skipped to keep the build fast. Because `./configure`'s
+OpenSSL probe is unreliable on the Windows runner (it feeds `-I`/`-L` MSYS paths
+to the native mingw64 gcc), `PJ_HAS_SSL_SOCK` is forced to `1` in
+`config_site.h` and the static libs are added to the link flags by absolute
+path, so TLS is compiled in unconditionally — a missing OpenSSL surfaces as a
+build error rather than a TLS-less DLL.
+
+- On **Windows**, OpenSSL is statically linked, so **no OpenSSL DLL is required
+  on the target machine** — TLS works out of the box. (OpenSSL is Apache-2.0
+  licensed, so static linking is fine.)
+- On **Linux**, the dependency is on OpenSSL **3.x** specifically
+  (`libssl.so.3`); OpenSSL 1.1 (`libssl.so.1.1`) will not satisfy it, and the
+  system OpenSSL must be present.
+- FIPS is **not** currently enabled. OpenSSL 3.x FIPS is not activated merely by
+  having OpenSSL installed — it requires a FIPS-validated build plus explicit
+  activation of the `fips` provider (via `openssl.cnf` or
+  `OSSL_PROVIDER_load`). See the discussion in the repository if FIPS is
+  required.
 
 ## CI/CD
 
@@ -161,9 +167,9 @@ manual dispatch).
 - `build-linux` (docker) builds `linux-x64` + `linux-arm64` + `win-x86`;
   `build-windows` (windows) builds `win-x64` via MSYS2/MinGW-w64; `pack-publish`
   collects the native libraries and packs/publishes the package.
-- The OpenSSL source build under `build/openssl/` is cached between runs with
-  `actions/cache`, keyed on the `Makefile` contents — so only the first build of
-  a given OpenSSL version compiles from scratch.
+- The OpenSSL source is downloaded and built from scratch on each run (the
+  tarball is fetched with `curl` and compiled under `build/openssl/`); it is not
+  cached between runs.
 - Versioning is derived from the source branch name and the latest `vX.Y.Z` tag:
   - `feature/*` bumps **minor**
   - `fix/*` bumps **patch**
@@ -191,8 +197,8 @@ manual dispatch).
 
 - **Windows build** — built with MinGW-w64 (via MSYS2) and linked with
   `-static-libgcc -static-libstdc++` to avoid libgcc/libstdc++ runtime DLL
-  dependencies. (OpenSSL itself is still linked dynamically — see
-  [TLS / OpenSSL](#tls--openssl).)
+  dependencies. OpenSSL is also linked statically, so `pjsua2.dll` has no
+  OpenSSL DLL dependency (see [TLS / OpenSSL](#tls--openssl)).
 - The bindings are regenerated by SWIG on every build; do not edit them by hand.
 - To bump the local package version (used outside CI), change `<Version>` in
   `pjsua2.net/pjsua2.net.csproj`. CI overrides this with the tag-derived version.
