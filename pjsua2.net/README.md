@@ -56,3 +56,11 @@ Subclass the `director`-enabled types (for example `Account`, `Call`, `Buddy`,
 - The generated bindings require `AllowUnsafeBlocks` — they are compiled into the
   shipped assembly already, so consumers do not need to change their settings.
 - This package is licensed under GPL-2.0-or-later, matching PJSIP.
+
+## Repository & Issues
+
+- Primary repository: https://forgejo.codecrush.dev/CodeCrush/pjsua2.net
+- GitHub mirror: https://github.com/emmanuelrobles/pjsua2.net
+- Issue tracker: https://github.com/emmanuelrobles/pjsua2.net/issues/new/choose
+
+Please open all bug reports and feature requests on the GitHub issue tracker.
